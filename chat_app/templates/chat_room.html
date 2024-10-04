@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ room_name }} || Chat</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #E5DDD5;
+            margin: 0;
+            padding: 0;
+        }
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 600px;
+            margin: auto;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #fff;
+            overflow: hidden;
+        }
+        #header {
+            display: flex;
+            align-items: center;
+            background-color: #075E54;
+            color: white;
+            padding: 15px;
+            font-size: 20px;
+        }
+        #backButton {
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            margin-right: 16px;
+        }
+        #roomName {
+            margin-right: auto;
+        }
+        #messages {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 20px;
+            max-width: 80%;
+            position: relative;
+        }
+        .sent {
+            background-color: #DCF8C6;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .received {
+            background-color: #F1F1F1;
+            align-self: flex-start;
+        }
+        .timestamp {
+            font-size: 8px;
+            color: #999;
+            margin-left: 10px;
+        }
+        .typing-notification {
+            font-size: 14px;
+            color: #666;
+            margin: 5px 0;
+            display: none;
+        }
+        textarea {
+            width: calc(100% - 100px);
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            resize: none;
+            font-size: 16px;
+        }
+        button {
+            width: 80px;
+            padding: 10px;
+            border: none;
+            border-radius: 20px;
+            background-color: #075E54;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #064D3B;
+        }
+        .input-container {
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            background-color: #F1F1F1;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div id="header">
+            <button id="backButton" onclick="window.location.href='/chat_app/index/'"><=</button>
+            <div id="roomName">{{ room_name }}</div>
+        </div>
+        <div id="messages"></div>
+        <div class="typing-notification" id="typingNotification"></div>
+        <div class="input-container">
+            <textarea id="messageInput" rows="2" placeholder="Type a message..."></textarea>
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    <script>
+        const roomName = "{{ room_name }}";
+        const username = "{{ username }}";
+        const chatSocket = new WebSocket(
+            'ws://' + window.location.host + '/ws/chat/' + roomName + '/'
+        );
+        const typingNotification = document.getElementById('typingNotification');
+        let typingTimer;
+        const typingInterval = 2000;
+
+        chatSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const message = data.message;
+            const sender = data.username;
+            if (data.typing !== undefined) {
+                if (data.typing) {
+                    if (sender !== username) {
+                        typingNotification.innerText = `${sender} is typing...`;
+                        typingNotification.style.display = 'block';
+                    }
+                } else {
+                    typingNotification.style.display = 'none';
+                }
+            }
+            if (message) {
+                const timestamp = new Date().toLocaleTimeString();
+                appendMessage(sender, message, timestamp);
+
+                const messages = JSON.parse(sessionStorage.getItem(roomName)) || [];
+                messages.push({ sender, message, timestamp });
+                sessionStorage.setItem(roomName, JSON.stringify(messages));
+            }
+        };
+
+        function appendMessage(sender, message, timestamp) {
+            const messageContainer = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message ' + (sender === username ? 'sent' : 'received');
+            if (sender === username) {
+                messageElement.innerHTML = 'You: ' + message +
+                                            `<span class="timestamp">${timestamp}</span>`;
+            } else {
+                messageElement.innerHTML = sender + ': ' + message +
+                                            `<span class="timestamp">${timestamp}</span>`;
+            }
+            messageContainer.appendChild(messageElement);
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+        
+        function loadMessages() {
+            const storedMessages = JSON.parse(sessionStorage.getItem(roomName)) || [];
+            storedMessages.forEach(({ sender, message, timestamp }) => {
+                appendMessage(sender, message, timestamp);
+            });
+        }
+        loadMessages();
+        chatSocket.onclose = function(e) {
+            console.error('Chat socket closed unexpectedly');
+        };
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            if (message) {
+                chatSocket.send(JSON.stringify({
+                    'message': message,
+                    'username': username
+                }));
+                messageInput.value = '';
+            }
+        }
+
+        const messageInput = document.getElementById('messageInput');
+        messageInput.addEventListener('keyup', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+            clearTimeout(typingTimer);
+            chatSocket.send(JSON.stringify({ 'typing': true }));
+            typingTimer = setTimeout(function() {
+                chatSocket.send(JSON.stringify({ 'typing': false }));
+            }, typingInterval);
+        });
+    </script>
+</body>
+</html>
